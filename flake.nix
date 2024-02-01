@@ -33,7 +33,6 @@
         networkx
         paho-mqtt
 	flask
-	requests
         # LSP
         python-lsp-server
         black
