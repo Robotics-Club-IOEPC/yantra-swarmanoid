@@ -33,6 +33,8 @@
         networkx
         paho-mqtt
 	flask
+	pygame
+	pybullet
         # LSP
         python-lsp-server
         black
@@ -45,7 +47,7 @@
     ];
 
     shellHook = ''
-            screen -S mqtt-session -dm mosquitto -c etc/mosquitto.conf
+            screen -S mqtt-session -dm mosquitto -c ./samples/mosquitto.conf
             echo "Type 'screen -r mqtt-session' to get mqtt logs!"
     '';
 
