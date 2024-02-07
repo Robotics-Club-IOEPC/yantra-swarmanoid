@@ -1,21 +1,27 @@
 import cv2
 import numpy as np
+import threading
 from aruco_detection import detect_aruco_markers
 from astar import astar
 from communication import send_command
+import time
 
 # Define constants and setup
 ARENA_WIDTH = 300
 ARENA_HEIGHT = 300
 GRID_SIZE = 2  # Adjust based on your setup
+
 # Marker IDs
 CORNER_MARKERS = {0, 1, 2, 3}
 INORGANIC_DROP_OFF_ID = 4
 ORGANIC_DROP_OFF_ID = 5
-# ROBOT_IDS = [6, 7]
-ROBOT_IDS = [7]
+ROBOT_IDS = [6, 7]
 INORGANIC_WASTE_ID = [8, 9, 10, 11, 12]
 ORGANIC_WASTE_ID = [13, 14, 15, 16, 17]
+
+# Initialize shared resources and a lock
+shared_resources = {"frame": None, "markers": {}, "drop_off_locations": {}}
+resources_lock = threading.Lock()
 
 
 def draw_path(frame, path, color, thickness=2, grid_size=15):
@@ -122,12 +128,13 @@ def convert_obstacles_to_grid(obstacles, cell_size=15):
     return grid_obstacles
 
 
-def convert_path_to_actual(path, cell_size=15):
+def convert_grid_to_actual(path, cell_size=15):
     """Converts a path of grid coordinates back to actual coordinates."""
     actual_path = [
         (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
         for x, y in path
     ]
+    print(f"actual_path:{actual_path}")
     return actual_path
 
 
@@ -153,129 +160,144 @@ def drop_off_waste(robot_id):
     pass
 
 
-url = "http://127.0.0.1:5000/video_feed"
-
-
-# url = 0
-def main():
-    cap = cv2.VideoCapture(url)  # Adjust the source based on your setup
-    paths = {}
-
+def robot_control_loop(robot_id):
+    global shared_resources, resources_lock
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+        with resources_lock:
+            frame = shared_resources.get("frame", None)
+            markers = shared_resources.get("markers", {})
+            drop_off_locations = shared_resources.get("drop_off_locations", {})
 
-        markers = detect_aruco_markers(frame)  # Detect ArUco markers in the frame
+        if frame is None:
+            continue
 
-        # Iterate over each detected marker and draw a box around it
-        for marker_id, marker_data in markers.items():
-            for data in marker_data:
-                corners = data["corners"]
-                # Since corners are already a list of tuples, we can use them directly.
-                # We need to make the corners list cyclic to connect the last point to the first.
-                cv2.polylines(
-                    frame,
-                    [np.array(corners, np.int32).reshape((-1, 1, 2))],
-                    isClosed=True,
-                    color=(0, 255, 0),
-                    thickness=2,
-                )
+        frame_copy = frame.copy()
 
-                # Optionally, draw the center point
-                cv2.circle(
-                    frame, data["center"], radius=2, color=(0, 0, 255), thickness=-1
-                )
+        robot_head_pos = get_head_position(robot_id, markers)
+        if robot_head_pos:
+            cv2.circle(
+                frame_copy, robot_head_pos, radius=5, color=(255, 0, 0), thickness=-1
+            )
 
-        drop_off_locations = {
-            INORGANIC_DROP_OFF_ID: markers.get(INORGANIC_DROP_OFF_ID)[0]["center"]
-            if markers.get(INORGANIC_DROP_OFF_ID)
-            else None,
-            ORGANIC_DROP_OFF_ID: markers.get(ORGANIC_DROP_OFF_ID)[0]["center"]
-            if markers.get(ORGANIC_DROP_OFF_ID)
-            else None,
-        }
-
-        # Calculate paths for each robot
-        for robot_id in ROBOT_IDS:
-            robot_head_pos = get_head_position(robot_id, markers)
-            if not robot_head_pos:
-                continue
-
-            # Draw the robot's head position as a blue circle
-            cv2.circle(frame, robot_head_pos, radius=5, color=(255, 0, 0), thickness=-1)
-
-            # Decide which IDs to look for based on the robot ID
             target_waste_ids = ORGANIC_WASTE_ID if robot_id == 6 else INORGANIC_WASTE_ID
-
-            # Update obstacles and get the nearest waste position
             obstacles, nearest_waste_pos = update_obstacles(
                 markers, target_waste_ids, robot_head_pos
             )
 
-            # Now use nearest_waste_pos as the target for pathfinding and obstacles for obstacle avoidance
-            if nearest_waste_pos:
-                # Exclude the nearest waste and other robots as obstacles
-                robot_obstacles = obstacles
-                # Draw obstacle positions on the screen
-                for obstacle in robot_obstacles:
-                    obstacle_text = f" {obstacle}"
-                    cv2.putText(
-                        frame,
-                        obstacle_text,
-                        obstacle,
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.3,
-                        (0, 0, 0),
-                        1,
-                        cv2.LINE_AA,
-                    )
-
-                path_to_waste = plan_path(
-                    robot_head_pos, nearest_waste_pos, robot_obstacles
+            for obstacle in obstacles:
+                obstacle_text = f" {obstacle}"
+                cv2.putText(
+                    frame_copy,
+                    obstacle_text,
+                    obstacle,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.3,
+                    (0, 0, 0),
+                    1,
+                    cv2.LINE_AA,
                 )
 
+            if nearest_waste_pos:
+                path_to_waste = plan_path(robot_head_pos, nearest_waste_pos, obstacles)
                 if path_to_waste:
-                    # Store the path to prevent other robots from taking it
-                    paths[robot_id] = set(path_to_waste)
-
-                    path_to_waste = convert_path_to_actual(path_to_waste)
+                    # Correctly convert path to actual pixel coordinates for drawing
+                    path_to_waste = convert_grid_to_actual(path_to_waste)
+                    draw_path(frame_copy, path_to_waste, (125, 125, 255), 2, GRID_SIZE)
                     send_command(robot_id, path_to_waste)
-
-                    draw_path(
-                        frame, path_to_waste, (125, 125, 255)
-                    )  # Blue path to waste
-
-                    # After reaching the waste (this logic needs to be implemented based on your robot's feedback mechanism)
                     pickup_waste(robot_id)
 
-                    # Calculate path to the drop-off location considering other robot paths
-                    drop_off_id = (
-                        ORGANIC_DROP_OFF_ID
-                        if target_waste_ids == ORGANIC_WASTE_ID
-                        else INORGANIC_DROP_OFF_ID
-                    )
+                drop_off_id = (
+                    ORGANIC_DROP_OFF_ID
+                    if target_waste_ids == ORGANIC_WASTE_ID
+                    else INORGANIC_DROP_OFF_ID
+                )
+                drop_off_location = drop_off_locations[drop_off_id]
 
+                if drop_off_location:
                     path_to_drop_off = plan_path(
-                        nearest_waste_pos,
-                        drop_off_locations[drop_off_id],
-                        robot_obstacles,
+                        nearest_waste_pos, drop_off_location, obstacles
                     )
-
                     if path_to_drop_off:
-                        path_to_drop_off = convert_path_to_actual(path_to_drop_off)
+                        path_to_drop_off = convert_grid_to_actual(path_to_drop_off)
                         draw_path(
-                            frame, path_to_drop_off, (125, 155, 125)
-                        )  # Green path to drop off
+                            frame_copy,
+                            path_to_drop_off,
+                            (125, 155, 125),
+                            2,
+                            GRID_SIZE,
+                        )
                         send_command(robot_id, path_to_drop_off)
                         drop_off_waste(robot_id)
 
-        # Show the frame with detected markers for debugging
-        cv2.imshow("Frame", frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"):  # Press 'q' to exit
-            break
+            for marker_id, marker_data in markers.items():
+                for data in marker_data:
+                    corners = data["corners"]
+                    cv2.polylines(
+                        frame_copy,
+                        [np.array(corners, np.int32).reshape((-1, 1, 2))],
+                        isClosed=True,
+                        color=(0, 255, 0),
+                        thickness=2,
+                    )
+                    cv2.circle(
+                        frame_copy,
+                        data["center"],
+                        radius=2,
+                        color=(0, 0, 255),
+                        thickness=-1,
+                    )
 
-    cap.release()
+            cv2.imshow(f"Robot {robot_id} Control View", frame_copy)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+        time.sleep(0.1)
+
+
+def capture_and_update_shared_resources(url):
+    global shared_resources, resources_lock
+    cap = cv2.VideoCapture(url)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to grab frame")
+            break
+        markers = detect_aruco_markers(frame)  # Detect ArUco markers in the frame
+        with resources_lock:
+            shared_resources["frame"] = frame
+            shared_resources["markers"] = markers
+            shared_resources["drop_off_locations"] = {
+                INORGANIC_DROP_OFF_ID: markers.get(INORGANIC_DROP_OFF_ID)[0]["center"]
+                if markers.get(INORGANIC_DROP_OFF_ID)
+                else None,
+                ORGANIC_DROP_OFF_ID: markers.get(ORGANIC_DROP_OFF_ID)[0]["center"]
+                if markers.get(ORGANIC_DROP_OFF_ID)
+                else None,
+            }
+
+
+def main():
+    # Start the video capture and shared resources update in a separate thread
+    capture_thread = threading.Thread(
+        target=capture_and_update_shared_resources,
+        args=("http://127.0.0.1:5000/video_feed",),
+        daemon=True,
+    )
+    capture_thread.start()
+
+    # Start a thread for each robot
+    robot_threads = [
+        threading.Thread(target=robot_control_loop, args=(robot_id,), daemon=True)
+        for robot_id in ROBOT_IDS
+    ]
+    for thread in robot_threads:
+        thread.start()
+
+    # Wait for the capture thread to finish
+    capture_thread.join()
+
+    # Threads are daemon threads, so they will exit when the main thread exits
+    # Ensure all windows are closed properly
     cv2.destroyAllWindows()
 
 
