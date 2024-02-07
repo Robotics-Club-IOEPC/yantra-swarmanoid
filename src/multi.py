@@ -3,7 +3,7 @@ import numpy as np
 import threading
 from aruco_detection import detect_aruco_markers
 from astar import astar
-from communication import send_command
+from communication import connect_mqtt, send_command, disconnect_mqtt
 import time
 
 # Define constants and setup
@@ -35,17 +35,21 @@ def draw_path(frame, path, color, thickness=2, grid_size=15):
 
 
 def get_head_position(robot_id, markers):
-    """Return the head position of the marker based on ArUco marker detection."""
+    """Return the head position and the top left and top right corner positions of the marker based on ArUco marker detection."""
     if robot_id in markers:
         for marker_data in markers[robot_id]:
             # Assuming corners are provided in the order: tl, tr, br, bl
-            tl, tr = marker_data["corners"][0], marker_data["corners"][1]
+            corners = marker_data["corners"]
+            tl, tr = corners[0], corners[1]
 
             # Calculate the midpoint between tl and tr for the head position
-            head_position = (int(tl[0] + tr[0]) // 2, int(tl[1] + tr[1]) // 2)
+            head_position = (int((tl[0] + tr[0]) / 2), int((tl[1] + tr[1]) / 2))
+            # Ensure tl and tr are tuples of integers
+            tl = (int(tl[0]), int(tl[1]))
+            tr = (int(tr[0]), int(tr[1]))
 
-            return head_position
-    return None
+            return head_position, tl, tr
+    return None, None, None
 
 
 def get_waste_positions(markers, waste_id):
@@ -134,7 +138,6 @@ def convert_grid_to_actual(path, cell_size=15):
         (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
         for x, y in path
     ]
-    print(f"actual_path:{actual_path}")
     return actual_path
 
 
@@ -162,6 +165,8 @@ def drop_off_waste(robot_id):
 
 def robot_control_loop(robot_id):
     global shared_resources, resources_lock
+    # Connect to MQTT
+    connect_mqtt()
     while True:
         with resources_lock:
             frame = shared_resources.get("frame", None)
@@ -173,7 +178,11 @@ def robot_control_loop(robot_id):
 
         frame_copy = frame.copy()
 
-        robot_head_pos = get_head_position(robot_id, markers)
+        (
+            robot_head_pos,
+            robot_top_left_corner,
+            robot_top_right_corner,
+        ) = get_head_position(robot_id, markers)
         if robot_head_pos:
             cv2.circle(
                 frame_copy, robot_head_pos, radius=5, color=(255, 0, 0), thickness=-1
@@ -202,8 +211,20 @@ def robot_control_loop(robot_id):
                 if path_to_waste:
                     # Correctly convert path to actual pixel coordinates for drawing
                     path_to_waste = convert_grid_to_actual(path_to_waste)
+                    print(
+                        f"Robot Head Center: {robot_head_pos}, Robot Top Left Corner: {robot_top_left_corner}, Robot Top Right Corner: {robot_top_right_corner}"
+                    )
+                    print(f"Bot Path: {path_to_waste}")
                     draw_path(frame_copy, path_to_waste, (125, 125, 255), 2, GRID_SIZE)
-                    send_command(robot_id, path_to_waste)
+                    # to send_command with the topic based on robot_id
+                    topic = f"/bot{robot_id - 5}"  # Assuming robot_id 6 -> 'bot1', robot_id 7 -> 'bot2'
+                    send_command(
+                        topic,
+                        robot_top_right_corner,
+                        robot_top_left_corner,
+                        robot_head_pos,
+                        path_to_waste,
+                    )
                     pickup_waste(robot_id)
 
                 drop_off_id = (
@@ -226,7 +247,15 @@ def robot_control_loop(robot_id):
                             2,
                             GRID_SIZE,
                         )
-                        send_command(robot_id, path_to_drop_off)
+                        # to send_command with the topic based on robot_id
+                        topic = f"/bot{robot_id - 5}"  # Assuming robot_id 6 -> 'bot1', robot_id 7 -> 'bot2'
+                        send_command(
+                            topic,
+                            robot_top_right_corner,
+                            robot_top_left_corner,
+                            robot_head_pos,
+                            path_to_drop_off,
+                        )
                         drop_off_waste(robot_id)
 
             for marker_id, marker_data in markers.items():
@@ -252,6 +281,8 @@ def robot_control_loop(robot_id):
                 break
 
         time.sleep(0.1)
+    # Disconnect from MQTT when done
+    disconnect_mqtt()
 
 
 def capture_and_update_shared_resources(url):
@@ -281,6 +312,8 @@ def main():
     capture_thread = threading.Thread(
         target=capture_and_update_shared_resources,
         args=("http://127.0.0.1:5000/video_feed",),
+        # args=("http://192.168.1.68:4747/video",),
+        # args=(0,),
         daemon=True,
     )
     capture_thread.start()
