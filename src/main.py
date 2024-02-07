@@ -126,6 +126,15 @@ def convert_obstacles_to_grid(obstacles, cell_size=15):
     return grid_obstacles
 
 
+def convert_path_to_actual(path, cell_size=15):
+    """Converts a path of grid coordinates back to actual coordinates."""
+    actual_path = [
+        (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2)
+        for x, y in path
+    ]
+    return actual_path
+
+
 def plan_path(start, goal, obstacles):
     """Wrapper for the A* pathfinding."""
     start_grid = convert_to_grid_coordinates(start)
@@ -233,7 +242,12 @@ def main():
                 if path_to_waste:
                     # Store the path to prevent other robots from taking it
                     paths[robot_id] = set(path_to_waste)
-                    draw_path(frame, path_to_waste, (0, 0, 255))  # Blue path to waste
+
+                    draw_path(
+                        frame, path_to_waste, (125, 125, 255)
+                    )  # Blue path to waste
+
+                    path_to_waste = convert_path_to_actual(path_to_waste)
                     send_command(robot_id, path_to_waste)
 
                     # After reaching the waste (this logic needs to be implemented based on your robot's feedback mechanism)
@@ -254,8 +268,9 @@ def main():
 
                     if path_to_drop_off:
                         draw_path(
-                            frame, path_to_drop_off, (0, 255, 0)
+                            frame, path_to_drop_off, (125, 155, 125)
                         )  # Green path to drop off
+                        path_to_drop_off = convert_path_to_actual(path_to_drop_off)
                         send_command(robot_id, path_to_drop_off)
                         drop_off_waste(robot_id)
 
