@@ -3,6 +3,7 @@
 import paho.mqtt.client as mqtt
 import math
 import time
+import threading
 
 # Constants
 MQTT_BROKER = "192.168.1.80"
@@ -62,13 +63,21 @@ def move_towards_goal(d_right, d_left, d_center, topic, threshold=5):
 
 def send_command(topic, tr, tl, robot_center, path):
     """Process the path and send appropriate MQTT commands to move the robot."""
+
     # Iterate through the path points and send commands
-    for next_position in path:
-        d_right, d_left, d_center = calculate_distances(
-            (robot_center, tl, tr), next_position
-        )
-        move_towards_goal(float(d_right), float(d_left), float(d_center), topic)
-        time.sleep(1)  # Adjust the sleep time as needed
+    def command_thread(topic, tr, tl, robot_center, path):
+        for next_position in path:
+            d_right, d_left, d_center = calculate_distances(
+                (robot_center, tl, tr), next_position
+            )
+            move_towards_goal(float(d_right), float(d_left), float(d_center), topic)
+            time.sleep(1)  # Adjust the sleep time as needed
+
+    thread = threading.Thread(
+        target=command_thread, args=(topic, tr, tl, robot_center, path)
+    )
+    thread.daemon = True
+    thread.start()
 
 
 def disconnect_mqtt():
