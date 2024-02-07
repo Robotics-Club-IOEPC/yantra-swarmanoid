@@ -26,58 +26,75 @@ def heuristic(a, b):
 #     return max(dx, dy, dx + dy)
 
 
-def get_neighbors(node, obstacles, grid_size):
-    """Generate neighbors for a given node, excluding obstacles."""
-    directions = [
-        (0, 1),
-        (1, 0),
-        (0, -1),
-        (-1, 0),
-        (-1, -1),
-        (-1, +1),
-        (+1, +1),
-        (+1, -1),
-    ]  # 4-way connectivity
-    result = []
-    for d in directions:
-        neighbor = (node[0] + d[0], node[1] + d[1])
-        # Check if the neighbor is within bounds and not an obstacle
-        if (
-            0 <= neighbor[0] < grid_size
-            and 0 <= neighbor[1] < grid_size
-            and neighbor not in obstacles
-        ):
-            result.append(neighbor)
-    return result
-
-
 def astar(start, goal, obstacles, grid_size):
-    """Implement the A* algorithm."""
+    # Define the neighbors function
+    def neighbors(position, obstacles, grid_size, obstacle_radius):
+        x, y = position
+        candidates = [
+            (x - 1, y),
+            (x + 1, y),
+            (x, y - 1),
+            (x, y + 1),
+            (x - 1, y - 1),
+            (x - 1, y + 1),
+            (x + 1, y - 1),
+            (x + 1, y + 1),
+        ]
+
+        valid_neighbors = []
+        for neighbor in candidates:
+            nx, ny = neighbor
+            if (
+                0 <= nx < grid_size
+                and 0 <= ny < grid_size
+                and neighbor not in obstacles
+                and all(
+                    abs(ox - nx) > obstacle_radius or abs(oy - ny) > obstacle_radius
+                    for ox, oy in obstacles
+                )
+            ):
+                valid_neighbors.append(neighbor)
+        return valid_neighbors
+
+    # Initialize the data structures
     open_set = []
-    heapq.heappush(open_set, (0, start))
+    closed_set = set()
     came_from = {}
     g_score = {start: 0}
     f_score = {start: heuristic(start, goal)}
 
+    # Add the start position to the open set
+    heapq.heappush(open_set, (f_score[start], start))
+
     while open_set:
+        # Get the position with the lowest f-score from the open set
         current = heapq.heappop(open_set)[1]
 
         if current == goal:
-            path = []
+            # Reconstruct the path
+            path = [current]
             while current in came_from:
-                path.append(current)
                 current = came_from[current]
-            return path[::-1]
+                path.append(current)
+            path.reverse()
+            return path
 
-        for neighbor in get_neighbors(current, obstacles, grid_size):
-            tentative_g_score = (
-                g_score[current] + 1
-            )  # Assume cost between neighbors is 1
+        # Add the current position to the closed set
+        closed_set.add(current)
 
-            if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
+        # Explore the neighbors
+        for neighbor in neighbors(current, obstacles, grid_size, obstacle_radius=2):
+            neighbor_g_score = g_score[current] + 1
+
+            if neighbor in closed_set:
+                continue
+
+            if neighbor not in open_set or neighbor_g_score < g_score[neighbor]:
                 came_from[neighbor] = current
-                g_score[neighbor] = tentative_g_score
-                f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
-                heapq.heappush(open_set, (f_score[neighbor], neighbor))
+                g_score[neighbor] = neighbor_g_score
+                f_score[neighbor] = neighbor_g_score + heuristic(neighbor, goal)
+                if neighbor not in open_set:
+                    heapq.heappush(open_set, (f_score[neighbor], neighbor))
 
-    return None  # Path not found
+    # No path found
+    return None

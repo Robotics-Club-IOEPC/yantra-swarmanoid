@@ -7,38 +7,29 @@ from communication import send_command
 # Define constants and setup
 ARENA_WIDTH = 300
 ARENA_HEIGHT = 300
-GRID_SIZE = 5  # Adjust based on your setup
-
+GRID_SIZE = 2  # Adjust based on your setup
 # Marker IDs
 CORNER_MARKERS = {0, 1, 2, 3}
 INORGANIC_DROP_OFF_ID = 4
 ORGANIC_DROP_OFF_ID = 5
 ROBOT_IDS = [6, 7]
-INORGANIC_WASTE_ID = 8
-ORGANIC_WASTE_ID = 9
+# ROBOT_IDS = [7]
+INORGANIC_WASTE_ID = [8, 9, 10, 11, 12]
+ORGANIC_WASTE_ID = [13, 14, 15, 16, 17]
 
 
 def draw_path(frame, path, color, thickness=2, grid_size=15):
     """Draws a path on the frame."""
     if not path:
         return
-
     # Convert path from grid coordinates back to pixel coordinates
     pixel_path = [
         (x * grid_size + grid_size // 2, y * grid_size + grid_size // 2)
         for x, y in path
     ]
-
     # Draw each segment of the path
     for i in range(len(pixel_path) - 1):
         cv2.line(frame, pixel_path[i], pixel_path[i + 1], color, thickness)
-
-
-def draw_obstacle(frame, obstacle, color, thickness=1, grid_size=15):
-    """Draws a rectangle for the obstacle grid cell on the frame."""
-    top_left = (obstacle[0] * grid_size, obstacle[1] * grid_size)
-    bottom_right = ((obstacle[0] + 1) * grid_size, (obstacle[1] + 1) * grid_size)
-    cv2.rectangle(frame, top_left, bottom_right, color, thickness)
 
 
 def get_head_position(robot_id, markers):
@@ -65,19 +56,7 @@ def get_waste_positions(markers, waste_id):
     ]
 
 
-def find_nearest_waste(robot_head_pos, waste_positions):
-    """Find and return the nearest waste position from the robot."""
-    nearest_position = None
-    min_distance = float("inf")
-    for pos in waste_positions:
-        distance = np.linalg.norm(np.array(robot_head_pos) - np.array(pos))
-        if distance < min_distance:
-            nearest_position = pos
-            min_distance = distance
-    return nearest_position
-
-
-def fill_grid_cells_from_corners(corners, grid_size=15):
+def fill_grid_cells_from_corners(corners, grid_size=5):
     """Given corners of a rectangular area, returns all grid cells covered by the rectangle."""
     # Convert each corner into grid coordinates
     grid_corners = [
@@ -98,20 +77,32 @@ def fill_grid_cells_from_corners(corners, grid_size=15):
     return covered_cells
 
 
-def update_obstacles(markers, exclude_ids):
-    """Update and return the list/set of obstacles based on detected markers, excluding specific IDs."""
-    all_exclude_ids = set(exclude_ids).union(
-        CORNER_MARKERS, {INORGANIC_DROP_OFF_ID, ORGANIC_DROP_OFF_ID}
-    )
+def update_obstacles(markers, target_waste_ids, robot_head_pos):
+    """Update and return the obstacles and the target waste position based on detected markers."""
     obstacles = set()
+    nearest_waste_pos = None
+    nearest_waste_dist = float("inf")
+
+    # Add all waste markers as obstacles
     for marker_id, marker_data_list in markers.items():
-        if marker_id not in all_exclude_ids:
+        if marker_id in INORGANIC_WASTE_ID or marker_id in ORGANIC_WASTE_ID:
             for marker_data in marker_data_list:
-                corners = marker_data["corners"]
-                obstacles.update(
-                    fill_grid_cells_from_corners(corners, grid_size=GRID_SIZE)
-                )
-    return obstacles
+                center = marker_data["center"]
+                obstacles.add(center)
+
+    # Find the nearest target waste marker
+    for marker_data_list in markers.get(target_waste_ids[0], []):
+        center = marker_data_list["center"]
+        distance = np.linalg.norm(np.array(robot_head_pos) - np.array(center))
+        if distance < nearest_waste_dist:
+            nearest_waste_dist = distance
+            nearest_waste_pos = center
+
+    # Remove the nearest target waste position from obstacles if it is present
+    if nearest_waste_pos:
+        obstacles.discard(nearest_waste_pos)
+
+    return obstacles, nearest_waste_pos
 
 
 def convert_to_grid_coordinates(position, cell_size=15):
@@ -123,18 +114,29 @@ def convert_to_grid_coordinates(position, cell_size=15):
     return (grid_x, grid_y)
 
 
+def convert_obstacles_to_grid(obstacles, cell_size=15):
+    """Converts a set of positions to grid coordinates."""
+    grid_obstacles = set()
+    for position in obstacles:
+        if not isinstance(position, tuple) or len(position) != 2:
+            raise ValueError("Each position must be a tuple of (x, y).")
+        grid_x = int(position[0] / cell_size)
+        grid_y = int(position[1] / cell_size)
+        grid_obstacles.add((grid_x, grid_y))
+    return grid_obstacles
+
+
 def plan_path(start, goal, obstacles):
     """Wrapper for the A* pathfinding."""
     start_grid = convert_to_grid_coordinates(start)
     goal_grid = convert_to_grid_coordinates(goal)
 
-    # Convert obstacle positions to grid coordinates
-    obstacle_grid = {convert_to_grid_coordinates(obstacle) for obstacle in obstacles}
+    obstacles = convert_obstacles_to_grid(obstacles)
 
     # Assuming your grid size is the width/height of the arena divided by GRID_SIZE
     grid_size = ARENA_WIDTH // GRID_SIZE
 
-    path = astar(start_grid, goal_grid, obstacle_grid, grid_size)
+    path = astar(start_grid, goal_grid, obstacles, grid_size)
     return path  # This will be a list of grid coordinates representing the path
 
 
@@ -189,16 +191,6 @@ def main():
             else None,
         }
 
-        # Show the frame with detected markers for debugging
-        # Initialize obstacles for all robots
-        common_obstacles = update_obstacles(markers, exclude_ids=[])
-
-        # Draw obstacles
-        # for obstacle in common_obstacles:
-        #     draw_obstacle(
-        #         frame, obstacle, (128, 0, 128), grid_size=GRID_SIZE
-        #     )  # Purple color for obstacles
-
         # Calculate paths for each robot
         for robot_id in ROBOT_IDS:
             robot_head_pos = get_head_position(robot_id, markers)
@@ -208,19 +200,31 @@ def main():
             # Draw the robot's head position as a blue circle
             cv2.circle(frame, robot_head_pos, radius=5, color=(255, 0, 0), thickness=-1)
 
-            target_waste_id = ORGANIC_WASTE_ID if robot_id == 6 else INORGANIC_WASTE_ID
-            waste_positions = get_waste_positions(markers, target_waste_id)
-            nearest_waste_pos = find_nearest_waste(robot_head_pos, waste_positions)
+            # Decide which IDs to look for based on the robot ID
+            target_waste_ids = ORGANIC_WASTE_ID if robot_id == 6 else INORGANIC_WASTE_ID
 
+            # Update obstacles and get the nearest waste position
+            obstacles, nearest_waste_pos = update_obstacles(
+                markers, target_waste_ids, robot_head_pos
+            )
+
+            # Now use nearest_waste_pos as the target for pathfinding and obstacles for obstacle avoidance
             if nearest_waste_pos:
                 # Exclude the nearest waste and other robots as obstacles
-                robot_obstacles = common_obstacles.union(paths.get(robot_id, set()))
-
-                # # Redraw obstacles to update the view after excluding the nearest waste
+                robot_obstacles = obstacles
+                # Draw obstacle positions on the screen
                 for obstacle in robot_obstacles:
-                    draw_obstacle(
-                        frame, obstacle, (128, 0, 128), grid_size=GRID_SIZE
-                    )  # Purple color for obstacles
+                    obstacle_text = f" {obstacle}"
+                    cv2.putText(
+                        frame,
+                        obstacle_text,
+                        obstacle,
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.3,
+                        (0, 0, 0),
+                        1,
+                        cv2.LINE_AA,
+                    )
 
                 path_to_waste = plan_path(
                     robot_head_pos, nearest_waste_pos, robot_obstacles
@@ -238,16 +242,9 @@ def main():
                     # Calculate path to the drop-off location considering other robot paths
                     drop_off_id = (
                         ORGANIC_DROP_OFF_ID
-                        if target_waste_id == ORGANIC_WASTE_ID
+                        if target_waste_ids == ORGANIC_WASTE_ID
                         else INORGANIC_DROP_OFF_ID
                     )
-                    robot_obstacles = common_obstacles.union(paths.get(robot_id, set()))
-
-                    # # Redraw obstacles to update the view after excluding the nearest waste
-                    # for obstacle in robot_obstacles:
-                    #     draw_obstacle(
-                    #         frame, obstacle, (128, 0, 128), grid_size=GRID_SIZE
-                    #     )  # Purple color for obstacles
 
                     path_to_drop_off = plan_path(
                         nearest_waste_pos,

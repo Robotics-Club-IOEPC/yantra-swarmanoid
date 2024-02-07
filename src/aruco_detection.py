@@ -2,21 +2,11 @@ import cv2
 import numpy as np
 
 
-def calculate_scale(corners, marker_physical_size_cm=15):
-    """
-    Calculate the scale in pixels per cm based on the distance between the top left and top right corners.
-
-    :param corners: The corners of the marker.
-    :param marker_physical_size_cm: The physical size of the marker in centimeters.
-    :return: Scale in pixels per cm.
-    """
-    # Calculate the distance between the top left and top right corners in pixels
-    tl, tr = corners[0], corners[1]
-    pixel_distance = np.linalg.norm(np.array(tl) - np.array(tr))
-
-    # Calculate the scale as pixels per cm
-    scale = pixel_distance / marker_physical_size_cm
-    return scale
+def calculate_scale(corners, marker_physical_size_cm):
+    # Calculate the distance between the first and second corner (top-left and top-right) in pixels
+    pixel_distance = np.linalg.norm(np.array(corners[0]) - np.array(corners[1]))
+    # Scale is pixels per cm
+    return pixel_distance / marker_physical_size_cm
 
 
 def adjust_marker_corners(
@@ -38,7 +28,14 @@ def adjust_marker_corners(
     :param marker_physical_size_cm: The physical size of the marker in centimeters for scale calculation.
     :return: Adjusted corners.
     """
-    scale = calculate_scale(corners, marker_physical_size_cm)
+    # Calculate the center of the marker
+    center = np.mean(corners, axis=0)
+
+    # Calculate the vectors from the center to the corners
+    vectors = corners - center
+
+    # Calculate the scale based on the physical size of the marker
+    scale = np.linalg.norm(vectors[0]) / (marker_physical_size_cm / 2)
 
     # Convert cm adjustments to pixels
     offset_x_pixels = offset_x_cm * scale
@@ -46,22 +43,21 @@ def adjust_marker_corners(
     adjust_width_pixels = adjust_width_cm * scale
     adjust_height_pixels = adjust_height_cm * scale
 
-    # Assuming top-left, top-right, bottom-right, bottom-left order
-    tl, tr, br, bl = corners
+    # Adjust the width in the marker's local coordinate system
+    width_adjustment_factor = 1 + adjust_width_cm / marker_physical_size_cm
+    vectors[:, 0] *= width_adjustment_factor
 
-    # Center of the marker
-    center_x, center_y = np.mean(corners, axis=0)
+    # Adjust the height in the marker's local coordinate system
+    height_adjustment_factor = 1 + adjust_height_cm / marker_physical_size_cm
+    vectors[:, 1] *= height_adjustment_factor
 
-    # Adjust for width and height
-    tl = (tl[0] - adjust_width_pixels // 2, tl[1] - adjust_height_pixels // 2)
-    tr = (tr[0] + adjust_width_pixels // 2, tr[1] - adjust_height_pixels // 2)
-    br = (br[0] + adjust_width_pixels // 2, br[1] + adjust_height_pixels // 2)
-    bl = (bl[0] - adjust_width_pixels // 2, bl[1] + adjust_height_pixels // 2)
+    # Rotate the offset to the marker's coordinate system if needed
+    # This is optional and depends on whether you want the offset to rotate with the marker
+    # If not, you can simply add the offset to the center point
+    rotated_offset = center + np.array([offset_x_pixels, offset_y_pixels])
 
-    # Apply offset
-    adjusted_corners = [
-        (x + offset_x_pixels, y + offset_y_pixels) for x, y in [tl, tr, br, bl]
-    ]
+    # Apply the adjustments and offsets to get the new corners
+    adjusted_corners = vectors + rotated_offset
 
     return adjusted_corners
 
@@ -86,8 +82,8 @@ def detect_aruco_markers(frame, aruco_dict_type=cv2.aruco.DICT_6X6_250):
             if id == 4 or id == 5 or id == 6 or id == 7:
                 processed_corners = adjust_marker_corners(
                     processed_corners,
-                    offset_x_cm=33.75 if id == 5 else 0,
-                    offset_y_cm=33.75 if id == 4 else 0,
+                    offset_x_cm=22.5 if id == 5 else 0,
+                    offset_y_cm=22.5 if id == 4 else 0,
                     adjust_width_cm=60 if id == 4 else (33.75 if id == 5 else 15),
                     adjust_height_cm=33.75 if id == 4 else (60 if id == 5 else 15),
                 )
