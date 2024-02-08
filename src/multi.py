@@ -6,6 +6,7 @@ import math
 import time
 from aruco_detection import detect_aruco_markers
 from astar import astar
+from frameCorrection import get_warped_frame
 
 # Define constants and setup
 ARENA_WIDTH = 300
@@ -65,7 +66,9 @@ def move_towards_goal(robot_id, path, threshold=10):
             d_right, d_left, d_center = calculate_distances(
                 (robot_center, tl, tr), next_position
             )
-            print(f"robot ID: {robot_id},left: {d_left}, right: {d_right}, center: {d_center}")
+            print(
+                f"robot ID: {robot_id},left: {d_left}, right: {d_right}, center: {d_center}"
+            )
 
             # Determine movement command based on distances
             if d_center < min(d_right, d_left):
@@ -104,8 +107,8 @@ def draw_path(frame, path, color, thickness=2, grid_size=15):
 
     # Draw each segment of the path
     for i in range(len(path) - 1):
-        # cv2.line(frame, path[i], path[i + 1], color, thickness)
-        cv2.circle(frame, path[i], 2, (0,0,0), 1)
+        cv2.line(frame, path[i], path[i + 1], color, thickness)
+        cv2.circle(frame, path[i], 2, (0, 0, 0), 1)
 
 
 def get_head_position(robot_id, markers):
@@ -330,6 +333,21 @@ def capture_and_update_shared_resources(url):
         if not ret:
             print("Failed to grab frame")
             break
+
+        # Perform frame correction here
+        PAD = 8
+        markerTL = 0
+        markerTR = 2
+        markerBL = 1
+        markerBR = 3
+
+        # Define the markers and their positions
+        marker_ids = [markerTL, markerTR, markerBL, markerBR]
+        corrected_frame, marker_corners_dict = get_warped_frame(frame, marker_ids, PAD)
+
+        if corrected_frame is not None:
+            frame = corrected_frame  # Use the corrected frame for further processing
+
         markers = detect_aruco_markers(frame)  # Detect ArUco markers in the frame
         with resources_lock:
             shared_resources["frame"] = frame
@@ -415,8 +433,8 @@ def main():
     # Start the video capture and shared resources update in a separate thread
     capture_thread = threading.Thread(
         target=capture_and_update_shared_resources,
-        args=("http://127.0.0.1:5000/video_feed",),
-        # args=("http://192.168.1.19:4747/video",),
+        # args=("http://127.0.0.1:5000/video_feed",),
+        args=("http://192.168.1.68:4747/video",),
         # args=(0,),
         daemon=True,
     )
