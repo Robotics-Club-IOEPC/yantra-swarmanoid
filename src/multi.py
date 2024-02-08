@@ -12,7 +12,7 @@ from frameCorrection import get_warped_frame
 ARENA_WIDTH = 300
 ARENA_HEIGHT = 300
 GRID_SIZE = 2  # Adjust based on your setup
-MQTT_BROKER = "192.168.146.231"
+MQTT_BROKER = "192.168.1.97"
 MQTT_PORT = 1883
 CORNER_MARKERS = {0, 1, 2, 3}
 INORGANIC_DROP_OFF_ID = 4
@@ -115,7 +115,7 @@ def move_towards_goal(robot_id, path, threshold=10):
                     + center_D_gain
                 )
                 right_speed = (
-                    righ_P_gain
+                    right_P_gain
                     + right_I_gain
                     + right_D_gain
                     + center_P_gain
@@ -156,6 +156,50 @@ def move_towards_goal(robot_id, path, threshold=10):
 
             time.sleep(2)  # Adjust sleep time as needed
 
+def draw_lines_to_goal(
+    frame, robot_corners, goal_position, color=(255, 0, 0), thickness=2
+):
+    # Unpack the robot_corners tuple
+    center, tl, tr = robot_corners
+
+    # Draw lines from each corner to the goal
+    cv2.line(
+        frame,
+        (int(tl[0]), int(tl[1])),
+        (int(goal_position[0]), int(goal_position[1])),
+        color,
+        thickness,
+    )
+    cv2.line(
+        frame,
+        (int(tr[0]), int(tr[1])),
+        (int(goal_position[0]), int(goal_position[1])),
+        color,
+        thickness,
+    )
+
+    # Also draw a line from the center to the goal
+    cv2.line(
+        frame,
+        (int(center[0]), int(center[1])),
+        (int(goal_position[0]), int(goal_position[1])),
+        (0,0,255),
+        thickness,
+    )
+
+    # Optionally, mark the goal position and the corners
+    cv2.circle(
+        frame, (int(goal_position[0]), int(goal_position[1])), 5, (0, 0, 255), -1
+    )  # Goal position in red
+    cv2.circle(
+        frame, (int(tl[0]), int(tl[1])), 5, (255, 0, 0), -1
+    )  # Top-left corner in blue
+    cv2.circle(
+        frame, (int(tr[0]), int(tr[1])), 5, (255, 0, 0), -1
+    )  # Top-right corner in blue
+
+
+    return frame
 
 def draw_path(frame, path, color, thickness=2, grid_size=15):
     """Draws a path on the frame."""
@@ -426,6 +470,8 @@ def visualize_robot_behavior():
             frame = shared_resources.get("frame", None)
             paths = shared_resources.get("paths", {})
             markers = shared_resources.get("markers", {})
+            goal_positions = shared_resources.get("goal_positions", {})
+
             if frame is None:
                 continue
 
@@ -463,6 +509,19 @@ def visualize_robot_behavior():
                     GRID_SIZE,
                 )
 
+            for robot_id in ROBOT_IDS:
+                (
+                    robot_head_pos,
+                    robot_top_left_corner,
+                    robot_top_right_corner,
+                    robot_center,
+                ) = get_head_position(robot_id, markers)
+
+                # Check if there is a current goal position for the robot
+                if robot_id in goal_positions:
+                    goal_position = goal_positions[robot_id]
+                    draw_lines_to_goal(frame_copy, (robot_center, robot_top_left_corner, robot_top_right_corner), goal_position)
+
             for marker_id, marker_data in markers.items():
                 for data in marker_data:
                     corners = data["corners"]
@@ -490,9 +549,9 @@ def main():
     # Start the video capture and shared resources update in a separate thread
     capture_thread = threading.Thread(
         target=capture_and_update_shared_resources,
-        # args=("http://127.0.0.1:5000/video_feed",),
+        args=("http://127.0.0.1:5000/video_feed",),
         # args=("http://192.168.1.68:4747/video",),
-        args=("http://10.148.6.222:8080/video",),
+        # args=("http://10.148.6.222:8080/video",),
         # args=(0,),
         daemon=True,
     )
