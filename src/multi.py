@@ -40,7 +40,13 @@ dt = 5
 client = mqtt.Client()
 
 # Initialize shared resources and a lock
-shared_resources = {"frame": None, "markers": {}, "drop_off_locations": {}, "paths": {}}
+shared_resources = {
+    "frame": None,
+    "markers": {},
+    "drop_off_locations": {},
+    "paths": {},
+    "goal_positions": {},
+}
 resources_lock = threading.Lock()
 
 
@@ -78,6 +84,9 @@ def move_towards_goal(robot_id, path, threshold=10):
                 if tl is None or tr is None or robot_center is None:
                     time.sleep(0.1)
                     continue
+
+                # Update the goal position for the current robot
+                shared_resources["goal_positions"][robot_id] = next_position
 
             # Pass the robot center along with corners to calculate distances
             d_right, d_left, d_center = calculate_distances(
@@ -144,6 +153,10 @@ def move_towards_goal(robot_id, path, threshold=10):
                 current_position, _, _, _ = get_head_position(
                     robot_id, shared_resources["markers"]
                 )
+
+                # Update the goal position for the current robot
+                shared_resources["goal_positions"][robot_id] = next_position
+
                 if (
                     current_position
                     and math.hypot(
