@@ -21,11 +21,22 @@ ROBOT_IDS = [6, 7]
 INORGANIC_WASTE_ID = [9, 11, 13, 15, 17]
 ORGANIC_WASTE_ID = [8, 10, 12, 14, 16]
 
+# PID controller constants
+P_left = 0.5
+P_right = 0.5
+I_left = 0.01
+I_right = 0.01
+D_left = 0.01
+D_right = 0.01
+left_prev_error = 0
+right_prev_error = 0
+dt = 0.1
+
 client = mqtt.Client()
 
 # Initialize shared resources and a lock
 shared_resources = {"frame": None, "markers": {}, "drop_off_locations": {}, "paths": {}}
-resources_lock = threading.Lock()
+resources_lock = threading.Lock() 
 
 
 def connect_mqtt():
@@ -47,6 +58,7 @@ def calculate_distances(robot_corners, next_position):
 
 
 def move_towards_goal(robot_id, path, threshold=10):
+    global left_prev_error, right_prev_error, P_left, P_right, I_left, I_right, D_left, D_right, dt
     """
     Move the robot towards the goal following the path.
     """
@@ -66,21 +78,42 @@ def move_towards_goal(robot_id, path, threshold=10):
             d_right, d_left, d_center = calculate_distances(
                 (robot_center, tl, tr), next_position
             )
-            print(
-                f"robot ID: {robot_id},left: {d_left}, right: {d_right}, center: {d_center}"
-            )
+            print(f"robot ID: {robot_id},left: {d_left}, right: {d_right}, center: {d_center}")
 
             # Determine movement command based on distances
             if d_center < min(d_right, d_left):
-                send_mqtt_command(f"/robot{robot_id}", "backwards")
-            elif abs(d_right - d_left) < threshold:
-                send_mqtt_command(f"/robot{robot_id}", "forward")
-            elif d_right < d_left:
-                command = "fast_left" if d_left - d_right > threshold else "left"
-                send_mqtt_command(f"/robot{robot_id}", command)
+                send_mqtt_command(f"/robot{robot_id}_left_backward", "255")
+                send_mqtt_command(f"/robot{robot_id}_right_forward", "255")
+            # elif abs(d_right - d_left) < threshold:
+            #     send_mqtt_command(f"/robot{robot_id}", "forward")
+            # elif d_right < d_left:
+            #     command = "fast_left" if d_left - d_right > threshold else "left"
+            #     send_mqtt_command(f"/robot{robot_id}", command)
+            # else:
+            #     command = "fast_right" if d_right - d_left > threshold else "right"
+            #     send_mqtt_command(f"/robot{robot_id}", command)
             else:
-                command = "fast_right" if d_right - d_left > threshold else "right"
-                send_mqtt_command(f"/robot{robot_id}", command)
+                left_error = d_left - d_right
+                right_error = d_right - d_left
+
+                left_P_gain = P_left * left_error
+                righ_P_gain = P_right * right_error
+                left_I_gain = I_left * (left_error + left_prev_error) * dt
+                right_I_gain = I_right * (right_error + right_prev_error) * dt
+                left_D_gain = (D_left * (left_error - left_prev_error)) / dt
+                right_D_gain = (D_right * (right_error - right_prev_error)) / dt
+
+                left_speed = left_P_gain + left_I_gain + left_D_gain
+                right_speed = righ_P_gain + right_I_gain + right_D_gain
+
+                if(left_speed >= 0):
+                    send_mqtt_command(f"/robot{robot_id}_left_forward", left_speed)
+                if(left_speed < 0):
+                    send_mqtt_command(f"/robot{robot_id}_left_backward", abs(left_speed))
+                if(right_speed >= 0):
+                    send_mqtt_command(f"/robot{robot_id}_right_forward", right_speed)
+                if(right_speed < 0):
+                    send_mqtt_command(f"/robot{robot_id}_right_backward", abs(right_speed))
 
             # Check if the robot has reached the next position
             with resources_lock:
@@ -108,7 +141,7 @@ def draw_path(frame, path, color, thickness=2, grid_size=15):
     # Draw each segment of the path
     for i in range(len(path) - 1):
         cv2.line(frame, path[i], path[i + 1], color, thickness)
-        cv2.circle(frame, path[i], 2, (0, 0, 0), 1)
+        cv2.circle(frame, path[i], 2, (0,0,0), 1)
 
 
 def get_head_position(robot_id, markers):
