@@ -24,7 +24,13 @@ ORGANIC_WASTE_ID = [8, 10, 12, 14, 16]
 client = mqtt.Client()
 
 # Initialize shared resources and a lock
-shared_resources = {"frame": None, "markers": {}, "drop_off_locations": {}, "paths": {}}
+shared_resources = {
+    "frame": None,
+    "markers": {},
+    "drop_off_locations": {},
+    "paths": {},
+    "goal_positions": {},
+}
 resources_lock = threading.Lock()
 
 
@@ -46,6 +52,52 @@ def calculate_distances(robot_corners, next_position):
     return d_right, d_left, d_center
 
 
+def draw_lines_to_goal(
+    frame, robot_corners, goal_position, color=(255, 0, 0), thickness=2
+):
+    # Unpack the robot_corners tuple
+    center, tl, tr = robot_corners
+
+    # Draw lines from each corner to the goal
+    cv2.line(
+        frame,
+        (int(tl[0]), int(tl[1])),
+        (int(goal_position[0]), int(goal_position[1])),
+        color,
+        thickness,
+    )
+    cv2.line(
+        frame,
+        (int(tr[0]), int(tr[1])),
+        (int(goal_position[0]), int(goal_position[1])),
+        color,
+        thickness,
+    )
+
+    # Also draw a line from the center to the goal
+    cv2.line(
+        frame,
+        (int(center[0]), int(center[1])),
+        (int(goal_position[0]), int(goal_position[1])),
+        (0,0,255),
+        thickness,
+    )
+
+    # Optionally, mark the goal position and the corners
+    cv2.circle(
+        frame, (int(goal_position[0]), int(goal_position[1])), 5, (0, 0, 255), -1
+    )  # Goal position in red
+    cv2.circle(
+        frame, (int(tl[0]), int(tl[1])), 5, (255, 0, 0), -1
+    )  # Top-left corner in blue
+    cv2.circle(
+        frame, (int(tr[0]), int(tr[1])), 5, (255, 0, 0), -1
+    )  # Top-right corner in blue
+
+
+    return frame
+
+
 def move_towards_goal(robot_id, path, threshold=10):
     """
     Move the robot towards the goal following the path.
@@ -62,13 +114,16 @@ def move_towards_goal(robot_id, path, threshold=10):
                     time.sleep(0.1)
                     continue
 
+                # Update the goal position for the current robot
+                shared_resources["goal_positions"][robot_id] = next_position
+
             # Pass the robot center along with corners to calculate distances
             d_right, d_left, d_center = calculate_distances(
                 (robot_center, tl, tr), next_position
             )
-            print(
-                f"robot ID: {robot_id},left: {d_left}, right: {d_right}, center: {d_center}"
-            )
+            # print(
+            #     f"robot ID: {robot_id},left: {d_left}, right: {d_right}, center: {d_center}"
+            # )
 
             # Determine movement command based on distances
             if d_center < min(d_right, d_left):
@@ -87,6 +142,10 @@ def move_towards_goal(robot_id, path, threshold=10):
                 current_position, _, _, _ = get_head_position(
                     robot_id, shared_resources["markers"]
                 )
+
+                # Update the goal position for the current robot
+                shared_resources["goal_positions"][robot_id] = next_position
+
                 if (
                     current_position
                     and math.hypot(
@@ -369,6 +428,8 @@ def visualize_robot_behavior():
             frame = shared_resources.get("frame", None)
             paths = shared_resources.get("paths", {})
             markers = shared_resources.get("markers", {})
+            goal_positions = shared_resources.get("goal_positions", {})
+
             if frame is None:
                 continue
 
@@ -378,17 +439,8 @@ def visualize_robot_behavior():
                     robot_head_pos,
                     robot_top_left_corner,
                     robot_top_right_corner,
-                    _,
+                    robot_center,
                 ) = get_head_position(robot_id, markers)
-                if robot_head_pos:
-                    # Draw robot head position
-                    cv2.circle(
-                        frame_copy,
-                        robot_head_pos,
-                        radius=5,
-                        color=(255, 0, 0),
-                        thickness=-1,
-                    )
 
             for robot_id, path_info in paths.items():
                 draw_path(
@@ -405,6 +457,19 @@ def visualize_robot_behavior():
                     2,
                     GRID_SIZE,
                 )
+
+            for robot_id in ROBOT_IDS:
+                (
+                    robot_head_pos,
+                    robot_top_left_corner,
+                    robot_top_right_corner,
+                    robot_center,
+                ) = get_head_position(robot_id, markers)
+
+                # Check if there is a current goal position for the robot
+                if robot_id in goal_positions:
+                    goal_position = goal_positions[robot_id]
+                    draw_lines_to_goal(frame_copy, (robot_center, robot_top_left_corner, robot_top_right_corner), goal_position)
 
             for marker_id, marker_data in markers.items():
                 for data in marker_data:
@@ -433,8 +498,8 @@ def main():
     # Start the video capture and shared resources update in a separate thread
     capture_thread = threading.Thread(
         target=capture_and_update_shared_resources,
-        # args=("http://127.0.0.1:5000/video_feed",),
-        args=("http://192.168.1.68:4747/video",),
+        args=("http://127.0.0.1:5000/video_feed",),
+        # args=("http://192.168.1.68:4747/video",),
         # args=(0,),
         daemon=True,
     )
