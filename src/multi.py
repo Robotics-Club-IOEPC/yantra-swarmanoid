@@ -12,7 +12,7 @@ from frameCorrection import get_warped_frame
 ARENA_WIDTH = 300
 ARENA_HEIGHT = 300
 GRID_SIZE = 2  # Adjust based on your setup
-MQTT_BROKER = "192.168.1.97"
+MQTT_BROKER = "192.168.146.190"
 MQTT_PORT = 1883
 CORNER_MARKERS = {0, 1, 2, 3}
 INORGANIC_DROP_OFF_ID = 4
@@ -25,8 +25,8 @@ ORGANIC_WASTE_ID = [8, 10, 12, 14, 16]
 P_left = 0.01
 P_right = 0.01
 P_center = 0.01
-I_left = 0.01
-I_right = 0.01
+I_left = 0.08
+I_right = 0.08
 I_center = 0.01
 D_left = 0.01
 D_right = 0.01
@@ -82,7 +82,7 @@ def move_towards_goal(robot_id, path, threshold=10):
                     robot_id, shared_resources["markers"]
                 )
                 if tl is None or tr is None or robot_center is None:
-                    time.sleep(0.1)
+                    time.sleep(0)
                     continue
 
                 # Update the goal position for the current robot
@@ -98,8 +98,9 @@ def move_towards_goal(robot_id, path, threshold=10):
 
             # Determine movement command based on distances
             if d_center < min(d_right, d_left):
-                send_mqtt_command(f"/robot{robot_id}_left_backward", "255")
-                send_mqtt_command(f"/robot{robot_id}_right_forward", "255")
+                send_mqtt_command(f"/robot{robot_id}_left_backward", "150")
+                send_mqtt_command(f"/robot{robot_id}_right_forward", "50")
+                print("rotate")
             else:
                 left_error = d_left - d_right
                 right_error = d_right - d_left
@@ -167,7 +168,7 @@ def move_towards_goal(robot_id, path, threshold=10):
                 ):
                     position_reached = True
 
-            time.sleep(2)  # Adjust sleep time as needed
+            time.sleep(0)  # Adjust sleep time as needed
 
 def draw_lines_to_goal(
     frame, robot_corners, goal_position, color=(255, 0, 0), thickness=2
@@ -386,7 +387,7 @@ def robot_control_loop(robot_id):
         ) = get_head_position(robot_id, markers)
 
         if not robot_head_pos:
-            time.sleep(0.1)
+            time.sleep(0)
             continue
 
         # Determine target waste and calculate path to waste
@@ -433,7 +434,7 @@ def robot_control_loop(robot_id):
             drop_off_waste(robot_id)  # Simulate waste drop-off
 
         # Loop with a delay to prevent constant recalculating
-        time.sleep(1)
+        time.sleep(0)
 
     # Disconnect MQTT when done
     disconnect_mqtt()
@@ -562,9 +563,9 @@ def main():
     # Start the video capture and shared resources update in a separate thread
     capture_thread = threading.Thread(
         target=capture_and_update_shared_resources,
-        args=("http://127.0.0.1:5000/video_feed",),
+        # args=("http://127.0.0.1:5000/video_feed",),
         # args=("http://192.168.1.68:4747/video",),
-        # args=("http://10.148.6.222:8080/video",),
+        args=("http://10.148.6.222:8080/video",),
         # args=(0,),
         daemon=True,
     )
