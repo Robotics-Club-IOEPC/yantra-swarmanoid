@@ -12,7 +12,7 @@ from frameCorrection import get_warped_frame
 ARENA_WIDTH = 300
 ARENA_HEIGHT = 300
 GRID_SIZE = 2  # Adjust based on your setup
-MQTT_BROKER = "192.168.239.190"
+MQTT_BROKER = "192.168.1.117"
 MQTT_PORT = 1883
 CORNER_MARKERS = {0, 1, 2, 3}
 INORGANIC_DROP_OFF_ID = 4
@@ -24,21 +24,21 @@ ORGANIC_WASTE_ID = [8, 10, 12, 14, 16]
 # Define PID constants and speeds for each robot
 robot_settings = {
     6: {  # Robot ID 6
-        "P_left": 0.005,
-        "P_right": 0.005,
-        "P_center": 0.001,
+        "P_left": 0.8,
+        "P_right": 0.8,
+        "P_center": 0.4,
         "I_left": 0.1,
         "I_right": 0.1,
         "I_center": 0.1,
-        "D_left": 0.01,
-        "D_right": 0.01,
-        "D_center": 0.01,
-        "backward_speed_left": 40,  # Example speed value
-        "backward_speed_right": 20,  # Example speed value
+        "D_left": 0.02,
+        "D_right": 0.02,
+        "D_center": 0.02,
+        "backward_speed_left": 30,  # Example speed value
+        "backward_speed_right": 30,  # Example speed value
         "left_prev_error": 0,
         "right_prev_error": 0,
         "center_prev_error": 0,
-        "dt": 0.1,
+        "dt": 0.3,
     },
     7: {  # Robot ID 7
         "P_left": 0.08,
@@ -55,7 +55,7 @@ robot_settings = {
         "left_prev_error": 0,
         "right_prev_error": 0,
         "center_prev_error": 0,
-        "dt": 0.1,
+        "dt": 0.3,
     },
 }
 
@@ -187,6 +187,7 @@ def move_towards_goal(robot_id, path, threshold=10):
                 send_mqtt_command(
                     f"/robot{robot_id}_right_backward", backward_speed_right
                 )
+                print("backwards")
             else:
                 left_error = d_left - d_right
                 right_error = d_right - d_left
@@ -221,6 +222,7 @@ def move_towards_goal(robot_id, path, threshold=10):
                     + center_I_gain
                     + center_D_gain
                 )
+                print(f"{left_speed}:{right_speed}")
 
                 if left_speed >= 0:
                     send_mqtt_command(f"/robot{robot_id}_left_forward", left_speed)
@@ -254,7 +256,7 @@ def move_towards_goal(robot_id, path, threshold=10):
                 ):
                     position_reached = True
 
-            time.sleep(0.1)  # Adjust sleep time as needed
+            time.sleep(0.3)  # Adjust sleep time as needed
 
 
 def draw_lines_to_goal(
@@ -592,6 +594,8 @@ def robot_control_loop(robot_id):
 
         if path_to_drop_off:
             move_towards_goal(robot_id, path_to_drop_off)  # Move towards drop-off
+            send_mqtt_command(f"/robot{robot_id}_right_forward", 0)
+            send_mqtt_command(f"/robot{robot_id}_left_forward", 0)
             drop_off_waste(robot_id, nearest_waste_id)
 
         # Loop with a delay to prevent constant recalculating
@@ -764,9 +768,9 @@ def main():
     # Start the video capture and shared resources update in a separate thread
     capture_thread = threading.Thread(
         target=capture_and_update_shared_resources,
-        args=("http://192.168.239.159:5000/video_feed",),
+        # args=("http://192.168.239.159:5000/video_feed",),
         # args=("http://192.168.1.88:8080/video",),
-        # args=("http://10.155.42.112:8080/video",),
+        args=("http://192.168.1.123:8080/video",),
         # args=(0,),
         daemon=True,
     )
