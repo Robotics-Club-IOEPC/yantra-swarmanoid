@@ -70,6 +70,7 @@ shared_resources = {
     "paths": {},
     "goal_positions": {},
     "processed_markers": set(),  # Blacklist of processed markers
+    "they_are_close": False,  # Flag to indicate proximity between bots 6 and 7
 }
 resources_lock = threading.Lock()
 
@@ -81,6 +82,45 @@ def connect_mqtt():
 
 def send_mqtt_command(topic, command):
     client.publish(topic, command)
+
+
+######################################################################################################
+######################################################################################################
+######################################################################################################
+def check_bots_proximity():
+    global shared_resources
+    proximity_radius = (
+        61  # Define the radius within which bots are considered close, adjust as needed
+    )
+
+    while True:
+        with resources_lock:
+            pos_6 = get_bot_position(6, shared_resources["markers"])
+            pos_7 = get_bot_position(7, shared_resources["markers"])
+
+            if pos_6 and pos_7:
+                distance = math.hypot(pos_6[0] - pos_7[0], pos_6[1] - pos_7[1])
+                shared_resources["they_are_close"] = distance < (2 * proximity_radius)
+            else:
+                shared_resources["they_are_close"] = False
+
+        time.sleep(1)  # Check periodically, adjust the sleep time as needed
+
+
+def get_bot_position(bot_id, markers):
+    """Helper function to get the current position of a bot based on its marker ID."""
+    if bot_id in markers:
+        marker_data = markers[bot_id]
+        if marker_data:
+            # Assuming the first marker data contains the position
+            center_x, center_y = marker_data[0]["center"]
+            return center_x, center_y
+    return None
+
+
+######################################################################################################
+######################################################################################################
+######################################################################################################
 
 
 def calculate_distances(robot_corners, next_position):
@@ -113,12 +153,16 @@ def move_towards_goal(robot_id, path, threshold=10):
     center_prev_error = settings["center_prev_error"]
     dt = settings["dt"]
 
-    print(settings)
-
     for next_position in path:
         position_reached = False
         while not position_reached:
+            print("#")
             with resources_lock:
+                while robot_id == 7 and shared_resources["they_are_close"]:
+                    send_mqtt_command(f"/robot{robot_id}_left_forward", 0)
+                    send_mqtt_command(f"/robot{robot_id}_right_forward", 0)
+                    print("Bot 7 stopping due to proximity to Bot 6")
+                    time.sleep(0.2)
                 # Extracting robot head position, top left, top right corners, and robot center
                 _, tl, tr, robot_center = get_head_position(
                     robot_id, shared_resources["markers"]
@@ -134,9 +178,6 @@ def move_towards_goal(robot_id, path, threshold=10):
             d_right, d_left, d_center = calculate_distances(
                 (robot_center, tl, tr), next_position
             )
-            print(
-                f"robot ID: {robot_id},left: {d_left}, right: {d_right}, center: {d_center}"
-            )
 
             # Determine movement command based on distances
             if d_center < min(d_right, d_left):
@@ -146,7 +187,6 @@ def move_towards_goal(robot_id, path, threshold=10):
                 send_mqtt_command(
                     f"/robot{robot_id}_right_backward", backward_speed_right
                 )
-                print("rotate")
             else:
                 left_error = d_left - d_right
                 right_error = d_right - d_left
@@ -181,9 +221,6 @@ def move_towards_goal(robot_id, path, threshold=10):
                     + center_I_gain
                     + center_D_gain
                 )
-
-                print(right_speed)
-                print(left_speed)
 
                 if left_speed >= 0:
                     send_mqtt_command(f"/robot{robot_id}_left_forward", left_speed)
@@ -344,8 +381,6 @@ def update_obstacles(markers, target_waste_ids, robot_head_pos):
     nearest_waste_pos = None
     nearest_waste_dist = float("inf")
     nearest_waste_id = None  # Track the ID of the nearest waste
-    nearest_tl = None
-    nearest_tr = None
 
     for marker_id, marker_data_list in markers.items():
         if (
@@ -364,13 +399,11 @@ def update_obstacles(markers, target_waste_ids, robot_head_pos):
                     nearest_waste_dist = distance
                     nearest_waste_pos = head_center
                     nearest_waste_id = marker_id
-                    nearest_tl = tl
-                    nearest_tr = tr
 
     if nearest_waste_pos:
         obstacles.discard(nearest_waste_pos)
 
-    return obstacles, nearest_waste_pos, nearest_waste_id, nearest_tl, nearest_tr
+    return obstacles, nearest_waste_pos, nearest_waste_id
 
 
 def convert_to_grid_coordinates(position, cell_size=15):
@@ -417,13 +450,62 @@ def plan_path(start, goal, obstacles):
     return path  # This will be a list of grid coordinates representing the path
 
 
+def find_nearest_edge_midpoint_to_robot(robot_pos, marker_id, markers):
+    nearest_edge_midpoint = None
+    nearest_edge_label = None
+    min_distance = float("inf")
+
+    # Define labels for edges based on their midpoints
+    edge_labels = ["Top", "Right", "Bottom", "Left"]
+
+    if marker_id in markers:
+        for data in markers[marker_id]:
+            corners = data["corners"]
+            # Calculate midpoints of edges
+            midpoints = [
+                (
+                    (corners[0][0] + corners[1][0]) / 2,
+                    (corners[0][1] + corners[1][1]) / 2,
+                ),  # Top edge
+                (
+                    (corners[1][0] + corners[2][0]) / 2,
+                    (corners[1][1] + corners[2][1]) / 2,
+                ),  # Right edge
+                (
+                    (corners[2][0] + corners[3][0]) / 2,
+                    (corners[2][1] + corners[3][1]) / 2,
+                ),  # Bottom edge
+                (
+                    (corners[3][0] + corners[0][0]) / 2,
+                    (corners[3][1] + corners[0][1]) / 2,
+                ),  # Left edge
+            ]
+
+            # Determine which midpoint is closest to the robot
+            for i, midpoint in enumerate(midpoints):
+                distance = math.hypot(
+                    midpoint[0] - robot_pos[0], midpoint[1] - robot_pos[1]
+                )
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_edge_midpoint = midpoint
+                    nearest_edge_label = edge_labels[i]
+
+    return nearest_edge_midpoint, nearest_edge_label
+
+
 def pickup_waste(robot_id):
-    pass
+    send_mqtt_command(f"/robot{robot_id}_gripper_close", 1)
+    time.sleep(3)
+    print("waste picked")
 
 
 def drop_off_waste(robot_id, waste_id):
     # Simulate dropping off the waste
     # After successful drop off, add the marker ID to the blacklist
+    send_mqtt_command(f"/robot{robot_id}_gripper_open", 1)
+    time.sleep(3)
+    print("waste dropped")
     with resources_lock:
         shared_resources["processed_markers"].add(waste_id)
 
@@ -456,13 +538,22 @@ def robot_control_loop(robot_id):
 
         # Determine target waste and calculate path to waste
         target_waste_ids = ORGANIC_WASTE_ID if robot_id == 6 else INORGANIC_WASTE_ID
-        obstacles, nearest_waste_pos, nearest_waste_id, tl, tr = update_obstacles(
+        obstacles, nearest_waste_pos, nearest_waste_id = update_obstacles(
             markers, target_waste_ids, robot_head_pos
         )
 
+        # Inside your robot_control_loop, after obtaining nearest_waste_id
+        if nearest_waste_id is not None:
+            (
+                nearest_edge_center,
+                nearest_edge_label,
+            ) = find_nearest_edge_midpoint_to_robot(
+                robot_head_pos, nearest_waste_id, markers
+            )
+
         path_to_waste, path_to_drop_off = [], []
         if nearest_waste_pos:
-            path_to_waste = plan_path(robot_head_pos, nearest_waste_pos, obstacles)
+            path_to_waste = plan_path(robot_head_pos, nearest_edge_center, obstacles)
             path_to_waste = (
                 convert_grid_to_actual(path_to_waste) if path_to_waste else []
             )
@@ -501,7 +592,7 @@ def robot_control_loop(robot_id):
 
         if path_to_drop_off:
             move_towards_goal(robot_id, path_to_drop_off)  # Move towards drop-off
-            drop_off_waste(robot_id, nearest_waste_id) 
+            drop_off_waste(robot_id, nearest_waste_id)
 
         # Loop with a delay to prevent constant recalculating
         time.sleep(0)
@@ -530,8 +621,8 @@ def capture_and_update_shared_resources(url):
         marker_ids = [markerTL, markerTR, markerBL, markerBR]
         corrected_frame, marker_corners_dict = get_warped_frame(frame, marker_ids, PAD)
 
-        # if corrected_frame is not None:
-        #     frame = corrected_frame  # Use the corrected frame for further processing
+        if corrected_frame is not None:
+            frame = corrected_frame  # Use the corrected frame for further processing
 
         markers = detect_aruco_markers(frame)  # Detect ArUco markers in the frame
         with resources_lock:
@@ -560,6 +651,17 @@ def visualize_robot_behavior():
                 continue
 
             frame_copy = frame.copy()
+
+            # Draw proximity radius for each bot
+            proximity_radius = 61
+            for bot_id in [6, 7]:  # Bot IDs you are tracking
+                bot_pos = get_bot_position(bot_id, markers)
+                if bot_pos:
+                    # Draw the proximity radius
+                    cv2.circle(
+                        frame_copy, bot_pos, proximity_radius, (0, 255, 255), 2
+                    )  # Yellow circle
+
             for robot_id in ROBOT_IDS:
                 (
                     robot_head_pos,
@@ -628,6 +730,31 @@ def visualize_robot_behavior():
                         thickness=-1,
                     )
 
+            for marker_id, marker_data in markers.items():
+                for data in marker_data:
+                    corners = data["corners"]
+                    center = data["center"]
+                    cv2.polylines(
+                        frame_copy,
+                        [np.array(corners, np.int32).reshape((-1, 1, 2))],
+                        isClosed=True,
+                        color=(0, 255, 0),
+                        thickness=2,
+                    )
+                    cv2.circle(
+                        frame_copy, center, radius=2, color=(0, 0, 255), thickness=-1
+                    )
+                    # Annotate marker ID
+                    cv2.putText(
+                        frame_copy,
+                        str(marker_id),
+                        center,
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (255, 255, 0),
+                        2,
+                    )
+
             cv2.imshow("Robot Visualization", frame_copy)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
@@ -637,13 +764,17 @@ def main():
     # Start the video capture and shared resources update in a separate thread
     capture_thread = threading.Thread(
         target=capture_and_update_shared_resources,
-        args=("http://127.0.0.1:5000/video_feed",),
-        # args=("http://192.168.1.19:8080/video",),
+        args=("http://192.168.239.159:5000/video_feed",),
+        # args=("http://192.168.1.88:8080/video",),
         # args=("http://10.155.42.112:8080/video",),
         # args=(0,),
         daemon=True,
     )
     capture_thread.start()
+
+    # Start proximity check thread
+    proximity_thread = threading.Thread(target=check_bots_proximity, daemon=True)
+    proximity_thread.start()
 
     # Start a thread for each robot
     robot_threads = [
