@@ -1,6 +1,24 @@
 #include <WiFi.h>
 #include "PubSubClient.h"
 
+    // 6: {  # Robot ID 6
+    //     "P_left": 0.8,
+    //     "P_right": 0.8,
+    //     "P_center": 0.4,
+    //     "I_left": 0.1,
+    //     "I_right": 0.1,
+    //     "I_center": 0.1,
+    //     "D_left": 0.02,
+    //     "D_right": 0.02,
+    //     "D_center": 0.02,
+    //     "backward_speed_left": 30,  # Example speed value
+    //     "backward_speed_right": 30,  # Example speed value
+    //     "left_prev_error": 0,
+    //     "right_prev_error": 0,
+    //     "center_prev_error": 0,
+    //     "dt": 0.3,
+    // },
+
 //watch monster moterdriver pinout  for ain1, ain2, bin1, bin2, etc
 //enable pin should be high with 3.3v
 #define m1_ain1 18 //left
