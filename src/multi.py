@@ -12,7 +12,7 @@ from frameCorrection import get_warped_frame
 ARENA_WIDTH = 300
 ARENA_HEIGHT = 300
 GRID_SIZE = 2  # Adjust based on your setup
-MQTT_BROKER = "192.168.1.97"
+MQTT_BROKER = "192.168.239.190"
 MQTT_PORT = 1883
 CORNER_MARKERS = {0, 1, 2, 3}
 INORGANIC_DROP_OFF_ID = 4
@@ -35,28 +35,28 @@ robot_settings = {
         "D_center": 0.01,
         "backward_speed_left": 40,  # Example speed value
         "backward_speed_right": 20,  # Example speed value
-        "left_prev_error" : 0,
-        "right_prev_error" : 0,
-        "center_prev_error" : 0,
-        "dt" : 0.1
+        "left_prev_error": 0,
+        "right_prev_error": 0,
+        "center_prev_error": 0,
+        "dt": 0.1,
     },
     7: {  # Robot ID 7
-        "P_left": 1.5,
-        "P_right": 1.5,
-        "P_center": 0.6,
-        "I_left": 0.3,
-        "I_right": 0.3,
+        "P_left": 0.08,
+        "P_right": 0.08,
+        "P_center": 0.2,
+        "I_left": 0.1,
+        "I_right": 0.1,
         "I_center": 0.07,
         "D_left": 0.02,
         "D_right": 0.02,
         "D_center": 0.02,
-        "backward_speed_left": 80,  # Different speed value for robot 7
-        "backward_speed_right": 60,  # Different speed value for robot 7
-        "left_prev_error" : 0,
-        "right_prev_error" : 0,
-        "center_prev_error" : 0,
-        "dt" : 0.1
-    }
+        "backward_speed_left": 70,  # Different speed value for robot 7
+        "backward_speed_right": 50,  # Different speed value for robot 7
+        "left_prev_error": 0,
+        "right_prev_error": 0,
+        "center_prev_error": 0,
+        "dt": 0.1,
+    },
 }
 
 
@@ -69,6 +69,7 @@ shared_resources = {
     "drop_off_locations": {},
     "paths": {},
     "goal_positions": {},
+    "processed_markers": set(),  # Blacklist of processed markers
 }
 resources_lock = threading.Lock()
 
@@ -139,8 +140,12 @@ def move_towards_goal(robot_id, path, threshold=10):
 
             # Determine movement command based on distances
             if d_center < min(d_right, d_left):
-                send_mqtt_command(f"/robot{robot_id}_left_backward", backward_speed_left)
-                send_mqtt_command(f"/robot{robot_id}_right_backward", backward_speed_right)
+                send_mqtt_command(
+                    f"/robot{robot_id}_left_backward", backward_speed_left
+                )
+                send_mqtt_command(
+                    f"/robot{robot_id}_right_backward", backward_speed_right
+                )
                 print("rotate")
             else:
                 left_error = d_left - d_right
@@ -338,18 +343,18 @@ def update_obstacles(markers, target_waste_ids, robot_head_pos):
     obstacles = set()
     nearest_waste_pos = None
     nearest_waste_dist = float("inf")
-    # Initialize tl and tr with None to handle the case where they might not be set
+    nearest_waste_id = None  # Track the ID of the nearest waste
     nearest_tl = None
     nearest_tr = None
 
     for marker_id, marker_data_list in markers.items():
-        if marker_id in target_waste_ids:
+        if (
+            marker_id in target_waste_ids
+            and marker_id not in shared_resources["processed_markers"]
+        ):
             for marker_data in marker_data_list:
                 corners = marker_data["corners"]
                 tl, tr = corners[0], corners[1]
-                bl, br = corners[3], corners[2]
-                right_center = ((tr[0] + br[0]) / 2, (tr[1] + br[1]) / 2)
-                left_center = ((tl[0] + bl[0]) / 2, (tl[1] + bl[1]) / 2)
                 head_center = ((tl[0] + tr[0]) / 2, (tl[1] + tr[1]) / 2)
                 obstacles.add(head_center)
                 distance = np.linalg.norm(
@@ -358,14 +363,14 @@ def update_obstacles(markers, target_waste_ids, robot_head_pos):
                 if distance < nearest_waste_dist:
                     nearest_waste_dist = distance
                     nearest_waste_pos = head_center
-                    nearest_tl = tl  # Update nearest_tl and nearest_tr with the corners of the nearest marker
+                    nearest_waste_id = marker_id
+                    nearest_tl = tl
                     nearest_tr = tr
 
     if nearest_waste_pos:
         obstacles.discard(nearest_waste_pos)
 
-    # Return the corners of the nearest waste marker along with other return values
-    return obstacles, nearest_waste_pos, nearest_tl, nearest_tr
+    return obstacles, nearest_waste_pos, nearest_waste_id, nearest_tl, nearest_tr
 
 
 def convert_to_grid_coordinates(position, cell_size=15):
@@ -412,26 +417,15 @@ def plan_path(start, goal, obstacles):
     return path  # This will be a list of grid coordinates representing the path
 
 
-def calculate_approach_point(marker_head_pos, marker_orientation, approach_distance=20):
-    # Normalize the orientation vector
-    norm = np.sqrt(marker_orientation[0] ** 2 + marker_orientation[1] ** 2)
-    direction = (marker_orientation[0] / norm, marker_orientation[1] / norm)
-
-    # Calculate the approach point
-    approach_point = (
-        marker_head_pos[0] + direction[0] * approach_distance,
-        marker_head_pos[1] + direction[1] * approach_distance,
-    )
-
-    return approach_point
-
-
 def pickup_waste(robot_id):
     pass
 
 
-def drop_off_waste(robot_id):
-    pass
+def drop_off_waste(robot_id, waste_id):
+    # Simulate dropping off the waste
+    # After successful drop off, add the marker ID to the blacklist
+    with resources_lock:
+        shared_resources["processed_markers"].add(waste_id)
 
 
 def robot_control_loop(robot_id):
@@ -462,18 +456,12 @@ def robot_control_loop(robot_id):
 
         # Determine target waste and calculate path to waste
         target_waste_ids = ORGANIC_WASTE_ID if robot_id == 6 else INORGANIC_WASTE_ID
-        obstacles, nearest_waste_pos, tl, tr = update_obstacles(
+        obstacles, nearest_waste_pos, nearest_waste_id, tl, tr = update_obstacles(
             markers, target_waste_ids, robot_head_pos
         )
 
         path_to_waste, path_to_drop_off = [], []
         if nearest_waste_pos:
-            # Calculate marker orientation (simplified, adjust based on your data structure)
-            marker_orientation = (tr[0] - tl[0], tr[1] - tl[1])
-            approach_point = calculate_approach_point(
-                nearest_waste_pos, marker_orientation
-            )
-            print(approach_point)
             path_to_waste = plan_path(robot_head_pos, nearest_waste_pos, obstacles)
             path_to_waste = (
                 convert_grid_to_actual(path_to_waste) if path_to_waste else []
@@ -507,9 +495,13 @@ def robot_control_loop(robot_id):
             send_mqtt_command(f"/robot{robot_id}_left_forward", 0)
             time.sleep(5)
             pickup_waste(robot_id)  # Simulate waste pickup
+        else:
+            send_mqtt_command(f"/robot{robot_id}_right_forward", 0)
+            send_mqtt_command(f"/robot{robot_id}_left_forward", 0)
+
         if path_to_drop_off:
             move_towards_goal(robot_id, path_to_drop_off)  # Move towards drop-off
-            drop_off_waste(robot_id)  # Simulate waste drop-off
+            drop_off_waste(robot_id, nearest_waste_id) 
 
         # Loop with a delay to prevent constant recalculating
         time.sleep(0)
@@ -645,8 +637,8 @@ def main():
     # Start the video capture and shared resources update in a separate thread
     capture_thread = threading.Thread(
         target=capture_and_update_shared_resources,
-        # args=("http://127.0.0.1:5000/video_feed",),
-        args=("http://192.168.1.68:8080/video",),
+        args=("http://127.0.0.1:5000/video_feed",),
+        # args=("http://192.168.1.19:8080/video",),
         # args=("http://10.155.42.112:8080/video",),
         # args=(0,),
         daemon=True,
