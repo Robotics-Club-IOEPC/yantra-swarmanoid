@@ -30,11 +30,7 @@
       with ps; [
         opencv4
         numpy
-        networkx
         paho-mqtt
-	flask
-	pygame
-	pybullet
         # LSP
         python-lsp-server
         black
