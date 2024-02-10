@@ -84,8 +84,8 @@ def detect_aruco_markers(frame, aruco_dict_type=cv2.aruco.DICT_6X6_250):
                     processed_corners,
                     offset_x_cm=22.5 if id == 5 else 0,
                     offset_y_cm=22.5 if id == 4 else 0,
-                    adjust_width_cm=60 if id == 4 else (33.75 if id == 5 else 15),
-                    adjust_height_cm=33.75 if id == 4 else (60 if id == 5 else 15),
+                    adjust_width_cm=0 if id == 4 else (0 if id == 5 else 15),
+                    adjust_height_cm=0 if id == 4 else (0 if id == 5 else 15),
                 )
 
             # Recalculate the center based on the processed corners
