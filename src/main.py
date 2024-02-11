@@ -24,9 +24,9 @@ ORGANIC_WASTE_ID = [8, 10, 12, 14, 16]
 # Define PID constants and speeds for each robot
 robot_settings = {
     6: {  # Robot ID 6
-        "P_left": 0.3,
-        "P_right": 0.3,
-        "P_center": 0.1,
+        "P_left": 0.8,
+        "P_right": 0.8,
+        "P_center": 0.4,
         "I_left": 0.01,
         "I_right": 0.01,
         "I_center": 0.01,
@@ -41,17 +41,17 @@ robot_settings = {
         "dt": 0.3,
     },
     7: {  # Robot ID 7
-        "P_left": 0.1,
-        "P_right": 0.1,
-        "P_center": 0.01,
-        "I_left": 0.01,
-        "I_right": 0.01,
-        "I_center": 0.01,
-        "D_left": 0.001,
-        "D_right": 0.001,
-        "D_center": 0.001,
-        "backward_speed_left": 5,  # Example speed value
-        "backward_speed_right": 5,  # Example speed value
+        "P_left": 2.2,
+        "P_right": 2.1,
+        "P_center": 0.1,
+        "I_left": 0.02,
+        "I_right": 0.1,
+        "I_center": 0.03,
+        "D_left": 0.0001,
+        "D_right": 0.0001,
+        "D_center": 0.0001,
+        "backward_speed_left": 1,  # Example speed value
+        "backward_speed_right": 1,  # Example speed value
         "left_prev_error": 0,
         "right_prev_error": 0,
         "center_prev_error": 0,
@@ -159,12 +159,16 @@ def move_towards_goal(robot_id, path, threshold=10):
             print("#")
             with resources_lock:
                 if robot_id == 7 and shared_resources["they_are_close"]:
-                    send_mqtt_command(f"/robot{robot_id}_left_backward", backward_speed_left)
-                    send_mqtt_command(f"/robot{robot_id}_right_backward", backward_speed_right)
+                    send_mqtt_command(
+                        f"/robot{robot_id}_left_backward", backward_speed_left
+                    )
+                    send_mqtt_command(
+                        f"/robot{robot_id}_right_backward", backward_speed_right
+                    )
                     print("Bot 7 stopping due to proximity to Bot 6")
                     time.sleep(0.2)
                     continue
-                elif robot_id == 6: 
+                elif robot_id == 6:
                     pass
                 # Extracting robot head position, top left, top right corners, and robot center
                 _, tl, tr, robot_center = get_head_position(
@@ -617,19 +621,19 @@ def capture_and_update_shared_resources(url):
             print("Failed to grab frame")
             break
 
-        # Perform frame correction here
-        PAD = 8
-        markerTL = 0
-        markerTR = 2
-        markerBL = 1
-        markerBR = 3
-
-        # Define the markers and their positions
-        marker_ids = [markerTL, markerTR, markerBL, markerBR]
-        corrected_frame, marker_corners_dict = get_warped_frame(frame, marker_ids, PAD)
-
-        if corrected_frame is not None:
-            frame = corrected_frame  # Use the corrected frame for further processing
+        # # Perform frame correction here
+        # PAD = 8
+        # markerTL = 0
+        # markerTR = 2
+        # markerBL = 1
+        # markerBR = 3
+        #
+        # # Define the markers and their positions
+        # marker_ids = [markerTL, markerTR, markerBL, markerBR]
+        # corrected_frame, marker_corners_dict = get_warped_frame(frame, marker_ids, PAD)
+        #
+        # if corrected_frame is not None:
+        #     frame = corrected_frame  # Use the corrected frame for further processing
 
         markers = detect_aruco_markers(frame)  # Detect ArUco markers in the frame
         with resources_lock:
@@ -773,7 +777,8 @@ def main():
         target=capture_and_update_shared_resources,
         # args=("http://192.168.239.159:5000/video_feed",),
         # args=("http://192.168.1.88:8080/video",),
-        args=("http://192.168.1.163:8080/video",),
+        args=("http://192.168.1.166:8080/video",),
+        # args=("http://127.0.0.1:5000/video_feed",),
         # args=(0,),
         daemon=True,
     )
