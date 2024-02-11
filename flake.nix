@@ -31,6 +31,7 @@
         opencv4
         numpy
         paho-mqtt
+	flask
         # LSP
         python-lsp-server
         black
