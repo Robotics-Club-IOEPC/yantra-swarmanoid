@@ -41,7 +41,6 @@
       # Micropython Dependencies
       screen
       mosquitto
-      gopro
     ];
 
     shellHook = ''
