@@ -1,16 +1,15 @@
-
-    7: {  # Robot ID 7
-        "P_left": 2,
-        "P_right": 1.9,
-        "P_center": 0.08,
+7: {  # Robot ID 7
+        "P_left": 0.4,
+        "P_right": 0.4,
+        "P_center": 0.1,
         "I_left": 0.01,
-        "I_right": 0.1,
+        "I_right": 0.01,
         "I_center": 0.01,
-        "D_left": 0.0001,
-        "D_right": 0.0001,
-        "D_center": 0.0001,
-        "backward_speed_left": 1,  # Example speed value
-        "backward_speed_right": 1,  # Example speed value
+        "D_left": 0.001,
+        "D_right": 0.001,
+        "D_center": 0.001,
+        "backward_speed_left": 5,  # Example speed value
+        "backward_speed_right": 5,  # Example speed value
         "left_prev_error": 0,
         "right_prev_error": 0,
         "center_prev_error": 0,

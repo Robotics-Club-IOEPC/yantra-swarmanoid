@@ -777,7 +777,7 @@ def main():
         target=capture_and_update_shared_resources,
         # args=("http://192.168.239.159:5000/video_feed",),
         # args=("http://192.168.1.88:8080/video",),
-        args=("http://192.168.1.163:8080/video",),
+        args=("http://192.168.1.166:8080/video",),
         # args=("http://127.0.0.1:5000/video_feed",),
         # args=(0,),
         daemon=True,
