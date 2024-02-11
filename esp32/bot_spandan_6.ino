@@ -1,6 +1,6 @@
 #include <WiFi.h>
 #include "PubSubClient.h"
-#include <ESP32Servo.h>
+#include "ESP32Servo.h"
 
 //watch monster moterdriver pinout  for ain1, ain2, bin1, bin2, etc
 //enable pin should be high with 3.3v
@@ -11,15 +11,12 @@
 #define m1_pwma 23    //(left)
 #define m1_pwmb 17    //(right) 
 
-int left_min_pwm_forward = 90;
+int left_min_pwm_forward = 93;
 int left_min_pwm_backward = 100;
 int right_min_pwm_forward = 100;
-int right_min_pwm_backward = 90;
+int right_min_pwm_backward = 95;
 WiFiClient espClient22;
 PubSubClient client(espClient22);
-Servo myservo;
-
-int servoPin = 18;
 
 // Replace with your network credentials (STATION)
 const char* ssid = "AI/ML";
@@ -27,6 +24,9 @@ const char* password = "ACES@1234";
 
 const char* mqtt_server = "192.168.1.117";
 
+Servo myservo;
+int pos = 0; 
+int servoPin = 19;
 void initWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -39,13 +39,13 @@ void initWiFi() {
 }
 
 void setup() {
-  Serial.begin(115200);
   ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
-  ESP32PWM::allocateTimer(2);
-  ESP32PWM::allocateTimer(3);
-  myservo.setPeriodHertz(50);// Standard 50hz servo
-  myservo.attach(servoPin, 1000, 2000);
+	ESP32PWM::allocateTimer(1);
+	ESP32PWM::allocateTimer(2);
+	ESP32PWM::allocateTimer(3);
+	myservo.setPeriodHertz(50);    // standard 50 hz servo
+	myservo.attach(servoPin, 1000, 2000);
+  Serial.begin(115200);
   initWiFi();
   Serial.print("RRSI: ");
   Serial.println(WiFi.RSSI());
@@ -75,117 +75,122 @@ void callback(String topic, byte* message, unsigned int length) {
   Serial.println();
 
   // If a message is received on the topic room/lamp, you check if the message is either on or off. Turns the lamp GPIO according to the message
-  if(topic=="/robot7_left_forward"){
+  // if(topic=="/robot7_left_forward"){
+  //     // Serial.print("Displaying message to users");
+  //     // if(messageInfo == "allert"){
+  //     //  len = messageInfo.length();
+  //     int pwm_value = messageInfo.toInt();
+  //     analogWrite(m1_pwma,pwm_value);
+  //     digitalWrite(m1_ain1, HIGH);
+  //     digitalWrite(m1_bin1, LOW);
+  //     Serial.print("robot7_left_forward : ");
+  //     Serial.println(pwm_value);
+  // }
+  // if(topic=="/robot7_right_forward"){
+  //     // Serial.print("Displaying message to users");
+  //     // if(messageInfo == "allert"){
+  //     //  len = messageInfo.length();
+  //     int pwm_value = messageInfo.toInt();
+  //     analogWrite(m1_pwma,pwm_value);
+  //     digitalWrite(m1_ain2, HIGH);
+  //     digitalWrite(m1_bin2, LOW);
+  //     Serial.print("robot7_right_forward : ");
+  //     Serial.println(pwm_value);
+  // }
+  // if(topic=="/robot7_left_backward"){
+  //     // Serial.print("Displaying message to users");
+  //     // if(messageInfo == "allert"){
+  //     //  len = messageInfo.length();
+  //     int pwm_value = messageInfo.toInt();
+  //     analogWrite(m1_pwma,pwm_value);
+  //     digitalWrite(m1_ain1, LOW);
+  //     digitalWrite(m1_bin1, HIGH);
+  //     Serial.print("robot7_left_backward : ");
+  //     Serial.println(pwm_value);
+  // }
+  // if(topic=="/robot7_right_backward"){
+  //     // Serial.print("Displaying message to users");
+  //     // if(messageInfo == "allert"){
+  //     //  len = messageInfo.length();
+  //     int pwm_value = messageInfo.toInt();
+  //     analogWrite(m1_pwma,pwm_value);
+  //     digitalWrite(m1_ain2, LOW);
+  //     digitalWrite(m1_bin2, HIGH);
+  //     Serial.print("robot7_right_backward : ");
+  //     Serial.println(pwm_value);
+  // }
+  if(topic=="/robot6_left_forward"){
       // Serial.print("Displaying message to users");
       // if(messageInfo == "allert"){
       //  len = messageInfo.length();
+      
       int pwm_value = messageInfo.toInt();
-      if(pwm_value != 0)
-        pwm_value = map(left_min_pwm_forward,255,0,255,pwm_value);
+      // if(pwm_value != 0)
+      //   pwm_value = map(left_min_pwm_forward,255,0,255,pwm_value);
       analogWrite(m1_pwma,pwm_value);
-      digitalWrite(m1_ain1, HIGH);
-      digitalWrite(m1_bin1, LOW);
-      Serial.print("robot7_left_forward : ");
+      digitalWrite(m1_bin1, HIGH);
+      digitalWrite(m1_ain1, LOW);
+      Serial.print("robot6_left_forward : ");
       Serial.println(pwm_value);
   }
-  if(topic=="/robot7_right_forward"){
+  if(topic=="/robot6_right_forward"){
       // Serial.print("Displaying message to users");
       // if(messageInfo == "allert"){
       //  len = messageInfo.length();
       int pwm_value = messageInfo.toInt();
-      if(pwm_value != 0)
-        pwm_value = map(right_min_pwm_forward,255,0,255,pwm_value);
+      // if(pwm_value != 0)
+      //   pwm_value = map(right_min_pwm_forward,255,0,255,pwm_value);
       analogWrite(m1_pwmb,pwm_value);
       digitalWrite(m1_ain2, HIGH);
       digitalWrite(m1_bin2, LOW);
-      Serial.print("robot7_right_forward : ");
+      Serial.print("robot6_right_forward : ");
       Serial.println(pwm_value);
   }
-  if(topic=="/robot7_left_backward"){
+  if(topic=="/robot6_gripper_close"){
+      // Serial.print("Displaying message to users");
+      // if(messageInfo == "allert"){
+      //  len = messageInfo.length();
+      for (pos = 0; pos <= 360; pos += 1) { // goes from 0 degrees to 180 degrees
+        // in steps of 1 degree
+        myservo.write(pos);    // tell servo to go to position in variable 'pos'
+        delay(15);             // waits 15ms for the servo to reach the position
+	    }
+  }
+  if(topic=="/robot6_gripper_open"){
+      // Serial.print("Displaying message to users");
+      // if(messageInfo == "allert"){
+      //  len = messageInfo.length();
+      for (pos = 360; pos >= 0; pos -= 1) { // goes from 180 degrees to 0 degrees
+        myservo.write(pos);    // tell servo to go to position in variable 'pos'
+        delay(15);             // waits 15ms for the servo to reach the position
+      }
+  }
+  if(topic=="/robot6_left_backward"){
       // Serial.print("Displaying message to users");
       // if(messageInfo == "allert"){
       //  len = messageInfo.length();
       int pwm_value = messageInfo.toInt();
-      if(pwm_value != 0)
-        pwm_value = map(left_min_pwm_backward,255,0,255,pwm_value);
+      // if(pwm_value != 0)
+      //   pwm_value = map(left_min_pwm_backward,255,0,255,pwm_value);
       analogWrite(m1_pwma,pwm_value);
-      digitalWrite(m1_ain1, LOW);
-      digitalWrite(m1_bin1, HIGH);
-      Serial.print("robot7_left_backward : ");
+      digitalWrite(m1_bin1, LOW);
+      digitalWrite(m1_ain1, HIGH);
+      Serial.print("robot6_left_backward : ");
       Serial.println(pwm_value);
   }
-  if(topic=="/robot7_right_backward"){
-      // Serial.print("Displaying message to users");
+  if(topic=="/robot6_right_backward"){
+      Serial.print("Displaying message to users");
       // if(messageInfo == "allert"){
       //  len = messageInfo.length();
       int pwm_value = messageInfo.toInt();
-      if(pwm_value != 0)
-        pwm_value = map(right_min_pwm_backward,255,0,255,pwm_value);
+      // if(pwm_value != 0)
+      //   pwm_value = map(right_min_pwm_backward,255,0,255,pwm_value);
       analogWrite(m1_pwmb,pwm_value);
       digitalWrite(m1_ain2, LOW);
       digitalWrite(m1_bin2, HIGH);
-      Serial.print("robot7_right_backward : ");
+      Serial.print("robot6_right_backward : ");
       Serial.println(pwm_value);
   }
-  if(topic =="/robot7_gripper_close"){
-    myservo.write(90);
-  }
-  if(topic =="/robot7_gripper_open"){
-    myservo.write(0);
-  }
-  // if(topic=="/robot6_left_forward"){
-  //     // Serial.print("Displaying message to users");
-  //     // if(messageInfo == "allert"){
-  //     //  len = messageInfo.length();
-      
-  //     int pwm_value = messageInfo.toInt();
-  //     if(pwm_value != 0)
-  //       pwm_value = map(left_min_pwm_forward,255,0,255,pwm_value);
-  //     analogWrite(m1_pwma,pwm_value);
-  //     digitalWrite(m1_bin1, HIGH);
-  //     digitalWrite(m1_ain1, LOW);
-  //     Serial.print("robot6_left_forward : ");
-  //     Serial.println(pwm_value);
-  // }
-  // if(topic=="/robot6_right_forward"){
-  //     // Serial.print("Displaying message to users");
-  //     // if(messageInfo == "allert"){
-  //     //  len = messageInfo.length();
-  //     int pwm_value = messageInfo.toInt();
-  //     if(pwm_value != 0)
-  //       pwm_value = map(right_min_pwm_forward,255,0,255,pwm_value);
-  //     analogWrite(m1_pwmb,pwm_value);
-  //     digitalWrite(m1_ain2, HIGH);
-  //     digitalWrite(m1_bin2, LOW);
-  //     Serial.print("robot6_right_forward : ");
-  //     Serial.println(pwm_value);
-  // }
-  // if(topic=="/robot6_left_backward"){
-  //     // Serial.print("Displaying message to users");
-  //     // if(messageInfo == "allert"){
-  //     //  len = messageInfo.length();
-  //     int pwm_value = messageInfo.toInt();
-  //     if(pwm_value != 0)
-  //       pwm_value = map(left_min_pwm_backward,255,0,255,pwm_value);
-  //     analogWrite(m1_pwma,pwm_value);
-  //     digitalWrite(m1_bin1, LOW);
-  //     digitalWrite(m1_ain1, HIGH);
-  //     Serial.print("robot6_left_backward : ");
-  //     Serial.println(pwm_value);
-  // }
-  // if(topic=="/robot6_right_backward"){
-  //     Serial.print("Displaying message to users");
-  //     // if(messageInfo == "allert"){
-  //     //  len = messageInfo.length();
-  //     int pwm_value = messageInfo.toInt();
-  //     if(pwm_value != 0)
-  //       pwm_value = map(right_min_pwm_backward,255,0,255,pwm_value);
-  //     analogWrite(m1_pwmb,pwm_value);
-  //     digitalWrite(m1_ain2, LOW);
-  //     digitalWrite(m1_bin2, HIGH);
-  //     Serial.print("robot6_right_backward : ");
-  //     Serial.println(pwm_value);
-  // }
   Serial.println();
 }
 // void backward()
@@ -239,7 +244,7 @@ void reconnect() {
     Serial.print("Attempting MQTT connection...");
     
     
-    if (client.connect("ESP32Client21")) {
+    if (client.connect("ESP32Client22")) {
       Serial.println("connected");  
       // Subscribe or resubscribe to a topic
       // You can subscribe to more topics (to control more LEDs in this example)
@@ -247,12 +252,13 @@ void reconnect() {
       // client.subscribe("/robot7_right_forward");
       // client.subscribe("/robot7_left_backward");
       // client.subscribe("/robot7_right_backward");
-      client.subscribe("/robot7_left_forward");
-      client.subscribe("/robot7_right_forward");
-      client.subscribe("/robot7_left_backward");
-      client.subscribe("/robot7_right_backward");
-      client.subscribe("/robot7_gripper_open");
-      client.subscribe("/robot7_gripper_close");
+      client.subscribe("/robot6_left_forward");
+      client.subscribe("/robot6_right_forward");
+      client.subscribe("/robot6_left_backward");
+      client.subscribe("/robot6_right_backward");
+      client.subscribe("/robot6_gripper_open");
+      client.subscribe("/robot6_gripper_close");
+      
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -273,6 +279,13 @@ void loop() {
   }
 
 if(!client.loop()){
-    client.connect("ESP32Client21");
+    client.connect("ESP32Client22");
       }
 }
+
+
+
+
+
+
+

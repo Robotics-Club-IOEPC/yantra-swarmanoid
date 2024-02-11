@@ -1,0 +1,17 @@
+    6: {  # Robot ID 6
+        "P_left": 3,
+        "P_right": 3,
+        "P_center": 1.5,
+        "I_left": 0.01,
+        "I_right": 0.01,
+        "I_center": 0.01,
+        "D_left": 0.001,
+        "D_right": 0.001,
+        "D_center": 0.001,
+        "backward_speed_left": 100,  # Example speed value
+        "backward_speed_right": 100,  # Example speed value
+        "left_prev_error": 0,
+        "right_prev_error": 0,
+        "center_prev_error": 0,
+        "dt": 0.3,
+    },

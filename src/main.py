@@ -24,17 +24,17 @@ ORGANIC_WASTE_ID = [8, 10, 12, 14, 16]
 # Define PID constants and speeds for each robot
 robot_settings = {
     6: {  # Robot ID 6
-        "P_left": 0.8,
-        "P_right": 0.8,
-        "P_center": 0.4,
+        "P_left": 3,
+        "P_right": 3,
+        "P_center": 1.5,
         "I_left": 0.01,
         "I_right": 0.01,
         "I_center": 0.01,
         "D_left": 0.001,
         "D_right": 0.001,
         "D_center": 0.001,
-        "backward_speed_left": 10,  # Example speed value
-        "backward_speed_right": 10,  # Example speed value
+        "backward_speed_left": 100,  # Example speed value
+        "backward_speed_right": 100,  # Example speed value
         "left_prev_error": 0,
         "right_prev_error": 0,
         "center_prev_error": 0,
@@ -777,7 +777,7 @@ def main():
         target=capture_and_update_shared_resources,
         # args=("http://192.168.239.159:5000/video_feed",),
         # args=("http://192.168.1.88:8080/video",),
-        args=("http://192.168.1.166:8080/video",),
+        args=("http://192.168.1.163:8080/video",),
         # args=("http://127.0.0.1:5000/video_feed",),
         # args=(0,),
         daemon=True,
